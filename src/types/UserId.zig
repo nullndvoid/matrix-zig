@@ -144,7 +144,8 @@ pub const ServerName = struct {
         self: @This(),
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
-        try writer.print("{s}", .{self.data});
+        try writer.print("{s}", .{self.host});
+        if (self.port) |p| try writer.print(":{d}", .{p});
     }
 
     test "parse server names" {
