@@ -6,5 +6,5 @@ const assert = std.debug.assert;
 pub const types = @import("types.zig");
 
 test {
-    std.testing.refAllDecls(@This());
+    _ = types;
 }
