@@ -40,6 +40,14 @@ pub const RoomId = struct {
     ) std.Io.Writer.Error!void {
         try writer.print("{s}", .{self.data});
     }
+
+    test "parse room id" {
+        _ = try RoomId.init("!0");
+        try std.testing.expectError(
+            error.InvalidRoomId,
+            RoomId.init("foobar"),
+        );
+    }
 };
 
 /// A User ID.
