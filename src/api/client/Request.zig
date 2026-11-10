@@ -18,7 +18,7 @@ pub const RequestId = struct {
         self: @This(),
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
-        try writer.print("{d}{d}", .{ self.ts, self.n });
+        try writer.print("{d}-{d}", .{ self.ts, self.n });
     }
 };
 
