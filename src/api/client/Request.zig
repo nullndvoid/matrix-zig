@@ -3,12 +3,24 @@
 const std = @import("std");
 const http = std.http;
 
-const ServerName = @import("root").types.ServerName;
+const ServerName = @import("../../types.zig").ServerName;
 
 const Request = @This();
 
 /// We can store request IDs to map them to correct handlers later.
-pub const RequestId = enum(u32) { _ };
+/// Clients are recommended to concatenate a monotonically increasing
+/// integer with the current timestamp.
+pub const RequestId = struct {
+    ts: i64,
+    n: u64,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print("{d}{d}", .{ self.ts, self.n });
+    }
+};
 
 /// A HTTP query parameter. `val` will be URL-encoded.
 pub const QueryParam = struct {
