@@ -292,10 +292,22 @@ pub fn writeTypedFieldsJson(jws: anytype, comptime prefix: []const u8, val: anyt
 
             switch (@typeInfo(@TypeOf(payload))) {
                 .@"struct" => |info| inline for (info.field_names) |name| {
+                    const v = @field(payload, name);
+                    if (@typeInfo(@TypeOf(v)) == .optional) {
+                        if (v) |inner| {
+                            try jws.objectField(name);
+                            try jws.write(inner);
+                        }
+
+                        continue;
+                    }
+
                     try jws.objectField(name);
-                    try jws.write(@field(payload, name));
+                    try jws.write(v);
                 },
+                .void => {},
                 else => {
+                    if (@typeInfo(@TypeOf(payload)) == .optional and payload == null) return;
                     try jws.objectField(@tagName(tag));
                     try jws.write(payload);
                 },
@@ -336,4 +348,42 @@ test "supports works with endpoint with lower/eq added_in" {
     try std.testing.expect(
         supports(Endpoint, versions),
     );
+}
+
+test "writeTypedFieldsJson" {
+    const gpa = std.testing.allocator;
+
+    const U = union(enum) {
+        dummy: void,
+        bare: []const u8,
+        fields: struct { a: []const u8, b: ?[]const u8 = null },
+    };
+    const W = struct {
+        u: U,
+        pub fn jsonStringify(self: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try writeTypedFieldsJson(jws, "m.test.", self.u);
+            try jws.endObject();
+        }
+    };
+
+    const cases = .{
+        .{
+            W{ .u = .dummy },
+            \\{"type":"m.test.dummy"}
+        },
+        .{
+            W{ .u = .{ .bare = "x" } },
+            \\{"type":"m.test.bare","bare":"x"}
+        },
+        .{
+            W{ .u = .{ .fields = .{ .a = "x" } } },
+            \\{"type":"m.test.fields","a":"x"}
+        },
+    };
+    inline for (cases) |c| {
+        const out = try std.json.Stringify.valueAlloc(gpa, c[0], serialise_options);
+        defer gpa.free(out);
+        try std.testing.expectEqualStrings(c[1], out);
+    }
 }
