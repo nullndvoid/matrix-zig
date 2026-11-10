@@ -18,6 +18,7 @@ const definitions = @import("definitions.zig");
 /// Errors: `404` no server discovery information available.
 pub const GetWellKnownClient = struct {
     pub const method: std.http.Method = .GET;
+    pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/client";
     pub const auth: common.Auth = .none;
     pub const added_in: ?common.SpecVersion = null;
@@ -37,6 +38,7 @@ pub const GetWellKnownClient = struct {
 /// Errors: `404` no server support information available.
 pub const GetWellKnownSupport = struct {
     pub const method: std.http.Method = .GET;
+    pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/support";
     pub const auth: common.Auth = .none;
     pub const added_in: ?common.SpecVersion = .from(1, 10);
@@ -83,6 +85,7 @@ pub const GetWellKnownSupport = struct {
 /// Errors: `404` no policy server information available.
 pub const GetWellKnownPolicyServer = struct {
     pub const method: std.http.Method = .GET;
+    pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/policy_server";
     pub const auth: common.Auth = .none;
     pub const added_in: ?common.SpecVersion = .from(1, 18);
@@ -115,6 +118,7 @@ pub const GetWellKnownPolicyServer = struct {
 /// is provided.
 pub const GetVersions = struct {
     pub const method: std.http.Method = .GET;
+    pub const base: common.BaseKind = .homeserver;
     pub const path = "/_matrix/client/versions";
     pub const auth: common.Auth = .optional;
     pub const added_in: ?common.SpecVersion = null;
@@ -145,7 +149,7 @@ test "parse well-known client response" {
         GetWellKnownClient.Response,
         std.testing.allocator,
         json,
-        .{ .ignore_unknown_fields = true },
+        common.parse_options,
     );
     defer parsed.deinit();
 
@@ -167,7 +171,7 @@ test "parse versions response" {
         GetVersions.Response,
         std.testing.allocator,
         json,
-        .{},
+        common.parse_options,
     );
     defer parsed.deinit();
 

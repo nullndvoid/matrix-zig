@@ -9,6 +9,16 @@ pub const Auth = enum {
     appservice_token,
 };
 
+pub const BaseKind = enum {
+    /// Used before server discovery.
+    server_name,
+    homeserver,
+};
+
+pub const parse_options = std.json.ParseOptions{
+    .ignore_unknown_fields = true,
+};
+
 pub const Bytes = struct {
     content_type: []const u8,
     content_disposition: ?[]const u8 = null,
