@@ -46,6 +46,7 @@ pub const Login = struct {
         auth: Auth,
         device_id: ?[]const u8 = null,
 
+        /// I should remember to skip optional fields.
         pub fn jsonStringify(self: @This(), jws: anytype) !void {
             try jws.beginObject();
 

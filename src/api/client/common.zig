@@ -283,6 +283,7 @@ pub fn supports(comptime Endpoint: type, server: []const SpecVersion) bool {
 }
 
 /// Helper to emit a `type` field, and then flatten under the tag of a tagged union.
+/// Remember to skip optional fields if you define any `jsonStringify` for a type.
 pub fn writeTypedFieldsJson(jws: anytype, comptime prefix: []const u8, val: anytype) !void {
     switch (val) {
         inline else => |payload, tag| {
