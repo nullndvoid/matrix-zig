@@ -19,6 +19,10 @@ pub const parse_options = std.json.ParseOptions{
     .ignore_unknown_fields = true,
 };
 
+pub const serialise_options = std.json.Stringify.Options{
+    .emit_null_optional_fields = false,
+};
+
 pub const Bytes = struct {
     content_type: []const u8,
     content_disposition: ?[]const u8 = null,
@@ -276,6 +280,27 @@ pub fn supports(comptime Endpoint: type, server: []const SpecVersion) bool {
     const needed = Endpoint.added_in orelse return true;
     for (server) |v| if (v.order(needed) != .lt) return true;
     return false;
+}
+
+/// Helper to emit a `type` field, and then flatten under the tag of a tagged union.
+pub fn writeTypedFieldsJson(jws: anytype, comptime prefix: []const u8, val: anytype) !void {
+    switch (val) {
+        inline else => |payload, tag| {
+            try jws.objectField("type");
+            try jws.write(prefix ++ @tagName(tag));
+
+            switch (@typeInfo(@TypeOf(payload))) {
+                .@"struct" => |info| inline for (info.field_names) |name| {
+                    try jws.objectField(name);
+                    try jws.write(@field(payload, name));
+                },
+                else => {
+                    try jws.objectField(@tagName(tag));
+                    try jws.write(payload);
+                },
+            }
+        },
+    }
 }
 
 test {
