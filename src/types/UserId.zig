@@ -63,6 +63,31 @@ pub fn format(
     try writer.print("{s}", .{self.data});
 }
 
+pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!UserId {
+    const s = try std.json.innerParse([]const u8, allocator, source, options);
+
+    return UserId.init(s) catch error.InvalidCharacter;
+}
+
+pub fn jsonParseFromValue(
+    allocator: std.mem.Allocator,
+    source: std.json.Value,
+    options: std.json.ParseOptions,
+) std.json.ParseFromValueError!UserId {
+    const s = try std.json.innerParseFromValue(
+        []const u8,
+        allocator,
+        source,
+        options,
+    );
+
+    return UserId.init(s) catch error.InvalidCharacter;
+}
+
+pub fn jsonStringify(self: @This(), jws: anytype) !void {
+    try jws.write(self.data);
+}
+
 /// Parsed server name.
 pub const ServerName = struct {
     /// This is just a slice. Be wary with ownership.
@@ -241,4 +266,12 @@ test "parse invalid user ids: server name" {
             UserId.init(input),
         );
     }
+}
+
+test "json" {
+    const parsed = try std.json.parseFromSlice(UserId, std.testing.allocator, "\"@bob:matrix.org\"", .{});
+    defer parsed.deinit();
+
+    try std.testing.expectEqualStrings("@bob:matrix.org", parsed.value.data);
+    try std.testing.expectEqualStrings("matrix.org", parsed.value.server_name.host);
 }

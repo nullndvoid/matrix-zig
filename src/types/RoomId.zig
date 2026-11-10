@@ -38,10 +38,42 @@ pub fn format(
     try writer.print("{s}", .{self.data});
 }
 
+pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!RoomId {
+    const s = try std.json.innerParse([]const u8, allocator, source, options);
+
+    return RoomId.init(s) catch error.InvalidCharacter;
+}
+
+pub fn jsonParseFromValue(
+    allocator: std.mem.Allocator,
+    source: std.json.Value,
+    options: std.json.ParseOptions,
+) std.json.ParseFromValueError!RoomId {
+    const s = try std.json.innerParseFromValue(
+        []const u8,
+        allocator,
+        source,
+        options,
+    );
+
+    return RoomId.init(s) catch error.InvalidCharacter;
+}
+
+pub fn jsonStringify(self: @This(), jws: anytype) !void {
+    try jws.write(self.data);
+}
+
 test "parse room id" {
     _ = try RoomId.init("!0");
     try std.testing.expectError(
         error.InvalidRoomId,
         RoomId.init("foobar"),
     );
+}
+
+test "json" {
+    const parsed = try std.json.parseFromSlice(RoomId, std.testing.allocator, "\"!1234abcd\"", .{});
+    defer parsed.deinit();
+
+    try std.testing.expectEqualStrings("!1234abcd", parsed.value.data);
 }
