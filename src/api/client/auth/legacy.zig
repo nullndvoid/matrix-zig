@@ -71,18 +71,8 @@ pub const Login = struct {
         auth: Auth,
         device_id: ?[]const u8 = null,
 
-        /// I should remember to skip optional fields.
         pub fn jsonStringify(self: @This(), jws: anytype) !void {
-            try jws.beginObject();
-
-            try common.writeTypedFieldsJson(jws, "m.login.", self.auth);
-
-            if (self.device_id) |id| {
-                try jws.objectField("device_id");
-                try jws.write(id);
-            }
-
-            try jws.endObject();
+            try common.stringify(self, jws);
         }
     };
 
@@ -110,10 +100,10 @@ pub const Login = struct {
         },
 
         pub fn jsonStringify(self: @This(), jws: anytype) !void {
-            try jws.beginObject();
-            try common.writeTypedFieldsJson(jws, "m.id.", self);
-            try jws.endObject();
+            try common.stringify(self, jws);
         }
+
+        pub const type_prefix = "m.id.";
     };
 };
 
