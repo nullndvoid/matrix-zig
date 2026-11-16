@@ -514,7 +514,7 @@ test "stringify some type" {
                     .password = "1234",
                 } },
             },
-            "{\"name\":\"Jacob\",\"type\":\"login\",\"email\":\"jacob@nullndvoid.xyz\",\"password\":\"1234\"}",
+            \\{"name":"Jacob","type":"login","email":"jacob@nullndvoid.xyz","password":"1234"}
         },
     };
 
