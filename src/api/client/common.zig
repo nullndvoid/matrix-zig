@@ -282,38 +282,134 @@ pub fn supports(comptime Endpoint: type, server: []const SpecVersion) bool {
     return false;
 }
 
-/// Helper to emit a `type` field, and then flatten under the tag of a tagged union.
-/// Remember to skip optional fields if you define any `jsonStringify` for a type.
-pub fn writeTypedFieldsJson(jws: anytype, comptime prefix: []const u8, val: anytype) !void {
+/// Stringifies structs and tagged unions. Add a
+/// `pub const flatten = .{ .field_name = "m.prefix" };`
+/// field to structs to flatten tagged unions matrix style.
+///
+/// Add a `type_prefix` decl to tagged unions when you need.
+///
+/// The compiler should guide you to the right path, but unit
+/// tests can enforce this.
+///
+/// _This should be used instead of manual `jsonStringify`_.
+///
+/// _Additionally, I will make it a requirement that all `Body` types
+/// declare a `jsonStringify` if not present._
+pub fn stringify(self: anytype, jws: anytype) !void {
+    const T = @TypeOf(self);
+
+    try jws.beginObject();
+
+    switch (@typeInfo(T)) {
+        .@"union" => {
+            if (comptime !@hasDecl(T, "type_prefix"))
+                @compileError(@typeName(T) ++ " is a union; declare `pub const type_prefix = \"...\";`");
+            try writeTypedFieldsJson(jws, T.type_prefix, self);
+        },
+        .@"struct" => {
+            const flatten = comptime if (@hasDecl(T, "flatten")) T.flatten else .{};
+            const names = @typeInfo(@TypeOf(flatten)).@"struct".field_names;
+
+            comptime for (names) |n| {
+                if (!@hasField(T, n))
+                    @compileError(@typeName(T) ++ " has no field '" ++ n ++ "' but it is named in `flatten`");
+                if (@typeInfo(@TypeOf(@field(flatten, n))) != .pointer)
+                    @compileError(@typeName(T) ++ ".flatten." ++ n ++ " must be a type prefix string");
+            };
+
+            try writeFields(jws, self, names);
+
+            inline for (names) |n| {
+                const v = @field(self, n);
+                const prefix = @field(flatten, n);
+                if (@typeInfo(@TypeOf(v)) == .optional) {
+                    if (v) |inner| try writeTypedFieldsJson(jws, prefix, inner);
+                } else {
+                    try writeTypedFieldsJson(jws, prefix, v);
+                }
+            }
+        },
+        else => @compileError("stringify only supports structs and tagged unions, got " ++ @typeName(T)),
+    }
+
+    try jws.endObject();
+}
+
+/// Writes `"type": "<prefix><tag>"`, then flattens the active payload into an
+/// object the caller has already opened. Use this in `jsonStringify` where you
+/// have a field that is a tagged union.
+fn writeTypedFieldsJson(jws: anytype, comptime prefix: []const u8, val: anytype) !void {
     switch (val) {
         inline else => |payload, tag| {
+            const P = @TypeOf(payload);
+
             try jws.objectField("type");
             try jws.write(prefix ++ @tagName(tag));
 
-            switch (@typeInfo(@TypeOf(payload))) {
-                .@"struct" => |info| inline for (info.field_names) |name| {
-                    const v = @field(payload, name);
-                    if (@typeInfo(@TypeOf(v)) == .optional) {
-                        if (v) |inner| {
-                            try jws.objectField(name);
-                            try jws.write(inner);
-                        }
-
-                        continue;
-                    }
-
-                    try jws.objectField(name);
-                    try jws.write(v);
+            switch (@typeInfo(P)) {
+                .@"struct" => {
+                    if (comptime @hasField(P, "type"))
+                        @compileError("variant '" ++ @tagName(tag) ++ "': " ++ @typeName(P) ++
+                            " has a `type` field, which would duplicate the discriminator");
+                    try writeFields(jws, payload, &.{});
                 },
                 .void => {},
+                .optional => @compileError("variant '" ++ @tagName(tag) ++ "' has optional payload " ++
+                    @typeName(P) ++ "; use void or split it into separate variants"),
                 else => {
-                    if (@typeInfo(@TypeOf(payload)) == .optional and payload == null) return;
+                    comptime checkFlattenable(P, "variant '" ++ @tagName(tag) ++ "'");
                     try jws.objectField(@tagName(tag));
                     try jws.write(payload);
                 },
             }
         },
     }
+}
+
+/// Writes every field of a struct into an already-open object, skipping null optionals.
+fn writeFields(jws: anytype, val: anytype, comptime skip: []const []const u8) !void {
+    const T = @TypeOf(val);
+
+    comptime for (skip) |name| {
+        if (!@hasField(T, name)) @compileError(@typeName(T) ++ " has no field '" ++ name ++ "'");
+    };
+
+    inline for (@typeInfo(T).@"struct".field_names) |f| {
+        const v = @field(val, f);
+        const FT = @TypeOf(v);
+
+        if (comptime contains(skip, f)) continue;
+
+        comptime checkFlattenable(FT, @typeName(T) ++ "." ++ f);
+
+        if (@typeInfo(FT) == .optional) {
+            if (v) |inner| {
+                try jws.objectField(f);
+                try jws.write(inner);
+            }
+        } else {
+            try jws.objectField(f);
+            try jws.write(v);
+        }
+    }
+}
+
+fn contains(comptime list: []const []const u8, comptime name: []const u8) bool {
+    for (list) |s| if (std.mem.eql(u8, s, name)) return true;
+    return false;
+}
+
+/// A union without its own jsonStringify would be written in std.json's
+/// `{"tag": payload}` form instead of Matrix's flat `{"type": ...}` form.
+fn checkFlattenable(comptime T: type, comptime where: []const u8) void {
+    const U = switch (@typeInfo(T)) {
+        .optional => |o| o.child,
+        else => T,
+    };
+
+    if (@typeInfo(U) == .@"union" and !std.meta.hasFn(U, "jsonStringify"))
+        @compileError(where ++ ": union " ++ @typeName(U) ++
+            " needs a jsonStringify, or it will serialise as {\"tag\": ...}");
 }
 
 test {
@@ -381,6 +477,7 @@ test "writeTypedFieldsJson" {
             \\{"type":"m.test.fields","a":"x"}
         },
     };
+
     inline for (cases) |c| {
         const out = try std.json.Stringify.valueAlloc(gpa, c[0], serialise_options);
         defer gpa.free(out);
