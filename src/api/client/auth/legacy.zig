@@ -68,8 +68,14 @@ pub const Login = struct {
     pub const Path = void;
     pub const Query = void;
     pub const Body = struct {
+        pub const flatten = .{
+            .auth = "m.login.",
+        };
+
         auth: Auth,
         device_id: ?[]const u8 = null,
+        initial_device_display_name: ?[]const u8 = null,
+        refresh_token: ?bool = null,
 
         pub fn jsonStringify(self: @This(), jws: anytype) !void {
             try common.stringify(self, jws);
@@ -89,6 +95,8 @@ pub const Login = struct {
     };
 
     pub const UserIdentifier = union(enum) {
+        pub const type_prefix = "m.id.";
+
         user: []const u8,
         thirdparty: struct {
             medium: []const u8,
@@ -102,8 +110,6 @@ pub const Login = struct {
         pub fn jsonStringify(self: @This(), jws: anytype) !void {
             try common.stringify(self, jws);
         }
-
-        pub const type_prefix = "m.id.";
     };
 };
 
@@ -128,4 +134,22 @@ test "UserIdentifier json" {
         defer gpa.free(out);
         try std.testing.expectEqualStrings(c[1], out);
     }
+}
+
+test "Login.Body json" {
+    const gpa = std.testing.allocator;
+    const body = Login.Body{
+        .auth = .{
+            .password = .{
+                .identifier = .{ .user = "jacob" },
+                .password = "password123",
+            },
+        },
+        .device_id = "ABC",
+    };
+    const out = try std.json.Stringify.valueAlloc(gpa, body, .{});
+    defer gpa.free(out);
+    try std.testing.expectEqualStrings(
+        \\{"device_id":"ABC","type":"m.login.password","identifier":{"type":"m.id.user","user":"jacob"},"password":"password123"}
+    , out);
 }
