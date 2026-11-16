@@ -409,7 +409,8 @@ fn checkFlattenable(comptime T: type, comptime where: []const u8) void {
 
     if (@typeInfo(U) == .@"union" and !std.meta.hasFn(U, "jsonStringify"))
         @compileError(where ++ ": union " ++ @typeName(U) ++
-            " needs a jsonStringify, or it will serialise as {\"tag\": ...}");
+            " needs a jsonStringify, or it will serialise as {\"tag\": ...}" ++ "\n\n" ++
+            "Hint: Add the field containing this tagged union to `pub const flatten`.");
 }
 
 test {
@@ -475,6 +476,45 @@ test "writeTypedFieldsJson" {
         .{
             W{ .u = .{ .fields = .{ .a = "x" } } },
             \\{"type":"m.test.fields","a":"x"}
+        },
+    };
+
+    inline for (cases) |c| {
+        const out = try std.json.Stringify.valueAlloc(gpa, c[0], serialise_options);
+        defer gpa.free(out);
+        try std.testing.expectEqualStrings(c[1], out);
+    }
+}
+
+test "stringify some type" {
+    const gpa = std.testing.allocator;
+
+    const T = struct {
+        name: []const u8,
+        auth: union(enum) {
+            login: struct { email: []const u8, password: []const u8 },
+            token: []const u8,
+        },
+
+        pub const flatten = .{
+            .auth = "",
+        };
+
+        pub fn jsonStringify(self: @This(), jws: anytype) !void {
+            try stringify(self, jws);
+        }
+    };
+
+    const cases = .{
+        .{
+            T{
+                .name = "Jacob",
+                .auth = .{ .login = .{
+                    .email = "jacob@nullndvoid.xyz",
+                    .password = "1234",
+                } },
+            },
+            "{\"name\":\"Jacob\",\"type\":\"login\",\"email\":\"jacob@nullndvoid.xyz\",\"password\":\"1234\"}",
         },
     };
 
