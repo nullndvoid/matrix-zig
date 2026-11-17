@@ -275,11 +275,13 @@ pub const SpecVersion = struct {
     }
 };
 
-const Part = union(enum) { literal: []const u8, param: []const u8 };
+pub const Part = union(enum) { literal: []const u8, param: []const u8 };
 
 /// Given a path template with variables in curly braces,
 /// parses into a list of literals/params.
-fn parsePathTemplate(comptime template: []const u8) []const Part {
+///
+/// Only intended for use in `Request.buildPath` outside of this file.
+pub fn parsePathTemplate(comptime template: []const u8) []const Part {
     comptime {
         var parts: []const Part = &.{};
         var i: usize = 0;
@@ -290,6 +292,7 @@ fn parsePathTemplate(comptime template: []const u8) []const Part {
                     @compileError("Unclosed '{' in path " ++ template);
 
                 parts = parts ++ .{Part{ .param = template[i + 1 .. end] }};
+                i = end + 1;
             } else {
                 const end = std.mem.findScalarPos(u8, template, i, '{') orelse
                     template.len;
@@ -303,7 +306,7 @@ fn parsePathTemplate(comptime template: []const u8) []const Part {
 }
 
 /// Validates the path template and Path struct fields match.
-fn checkPath(comptime E: type) void {
+pub fn checkPath(comptime E: type) void {
     const parts = comptime parsePathTemplate(E.path);
     inline for (parts) |p| if (p == .param) {
         if (E.Path == void or !@hasField(E.Path, p.param))
@@ -311,18 +314,21 @@ fn checkPath(comptime E: type) void {
                 "} has no field in Path");
     };
 
-    if (E.Path != void) for (@typeInfo(E.Path).@"struct".field_names) |f| {
-        if (!templateHas(parts, f))
+    if (E.Path != void) inline for (@typeInfo(E.Path).@"struct".field_names) |f| {
+        if (comptime !templateHas(parts, f))
             @compileError(@typeName(E) ++ ": Path." ++ f ++ " is not used in the path template");
+
+        if (@typeInfo(@FieldType(E.Path, f)) == .optional)
+            @compileError(@typeName(E) ++ ": Path." ++ f ++ " may not be optional in the path template");
     };
 }
 
-fn templateHas(parts: []const Part, comptime field_name: [:0]const u8) bool {
-    inline for (parts) |p| {
-        if (p == .param) if (!std.mem.eql(u8, p.param, field_name)) continue;
-
-        return true;
-    }
+/// Returns true if `field_name` appears as a `{param}` in the template parts.
+fn templateHas(comptime parts: []const Part, comptime field_name: []const u8) bool {
+    for (parts) |p| switch (p) {
+        .param => |name| if (std.mem.eql(u8, name, field_name)) return true,
+        .literal => {},
+    };
 
     return false;
 }
