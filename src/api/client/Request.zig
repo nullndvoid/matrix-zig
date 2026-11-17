@@ -254,6 +254,9 @@ test "Request.init handles Query correctly" {
         try std.testing.expectEqualStrings(want.key, got.key);
         try std.testing.expectEqualStrings(want.val, got.val);
     }
+
+    const expected_path = "/_matrix/client/v3/fakestub/100%25%20legit%20CS%3AGO%20cheats/12345";
+    try std.testing.expectEqualStrings(expected_path, request.path);
 }
 
 test {
