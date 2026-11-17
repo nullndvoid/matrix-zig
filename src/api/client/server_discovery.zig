@@ -8,7 +8,7 @@
 
 const std = @import("std");
 const common = @import("common.zig");
-const Endpoint = @import("Endpoint.zig");
+const endpoint = @import("Endpoint.zig");
 const definitions = @import("definitions.zig");
 
 /// Gets discovery information about the domain. The file may include
@@ -187,7 +187,7 @@ test "parse versions response" {
 }
 
 test {
-    Endpoint.checkAll(@This());
+    endpoint.checkAll(@This());
 
     std.testing.refAllDecls(@This());
 }

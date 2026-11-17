@@ -220,10 +220,11 @@ fn buildPath(comptime E: type, arena: Allocator, path: E.Path) ![]const u8 {
     inline for (comptime parsePathTemplate(E.path)) |part| switch (part) {
         .literal => |l| aw.writer.writeAll(l) catch return error.OutOfMemory,
         .param => |name| {
-            const raw = try valToString(E.Path, @field(
-                path,
-                name,
-            ), arena);
+            const raw = try valToString(
+                E.Path,
+                @field(path, name),
+                arena,
+            );
 
             std.Uri.Component.percentEncode(&aw.writer, raw, isUnreserved) catch
                 return error.OutOfMemory;

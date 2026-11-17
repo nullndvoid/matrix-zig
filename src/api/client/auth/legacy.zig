@@ -3,7 +3,7 @@
 const std = @import("std");
 
 const common = @import("../common.zig");
-const Endpoint = @import("../Endpoint.zig");
+const endpoint = @import("../Endpoint.zig");
 const definitions = @import("../definitions.zig");
 
 /// Gets the homeserver’s supported login types to authenticate users.
@@ -171,7 +171,7 @@ test "Login.Body json" {
 }
 
 test {
-    Endpoint.checkAll(@This());
+    endpoint.checkAll(@This());
 
     std.testing.refAllDecls(@This());
 }
