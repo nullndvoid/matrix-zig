@@ -29,16 +29,16 @@ pub const Bytes = struct {
     body: []const u8,
 };
 
-pub const Error = struct {
+pub const MatrixError = struct {
     errcode: []const u8,
-    @"error": []const u8,
+    @"error": ?[]const u8 = null,
     retry_after_ms: ?u64 = null,
     soft_logout: ?bool = null,
 
     /// Classifies `errcode`. Returns `error.Other` for codes not known to
     /// this library (including non-`M_` namespaced codes); the raw string is
     /// still available in `errcode`.
-    pub fn code(self: Error) ErrorCode {
+    pub fn code(self: MatrixError) ErrorCode {
         return ERROR_CODE_MAP.get(self.errcode) orelse error.Other;
     }
 };
@@ -164,10 +164,10 @@ const ERROR_CODE_MAP = std.StaticStringMap(ErrorCode).initComptime(.{
 });
 
 test "error code classification" {
-    const known = Error{ .errcode = "M_FORBIDDEN", .@"error" = "nope" };
+    const known = MatrixError{ .errcode = "M_FORBIDDEN", .@"error" = "nope" };
     try std.testing.expectEqual(error.Forbidden, known.code());
 
-    const custom = Error{ .errcode = "COM_EXAMPLE_CUSTOM", .@"error" = "?" };
+    const custom = MatrixError{ .errcode = "COM_EXAMPLE_CUSTOM", .@"error" = "?" };
     try std.testing.expectEqual(error.Other, custom.code());
 
     // Every error in the set except `Other` must be reachable from the map.
@@ -274,100 +274,6 @@ pub const SpecVersion = struct {
             try std.testing.expectError(error.InvalidSpecVersion, parse(f));
     }
 };
-
-pub const Part = union(enum) { literal: []const u8, param: []const u8 };
-
-/// Given a path template with variables in curly braces,
-/// parses into a list of literals/params.
-///
-/// Only intended for use in `Request.buildPath` outside of this file.
-pub fn parsePathTemplate(comptime template: []const u8) []const Part {
-    comptime {
-        var parts: []const Part = &.{};
-        var i: usize = 0;
-
-        while (i < template.len) {
-            if (template[i] == '{') {
-                const end = std.mem.findScalarPos(u8, template, i, '}') orelse
-                    @compileError("Unclosed '{' in path " ++ template);
-
-                parts = parts ++ .{Part{ .param = template[i + 1 .. end] }};
-                i = end + 1;
-            } else {
-                const end = std.mem.findScalarPos(u8, template, i, '{') orelse
-                    template.len;
-                parts = parts ++ .{Part{ .literal = template[i..end] }};
-                i = end;
-            }
-        }
-
-        return parts;
-    }
-}
-
-/// Validates the path template and Path struct fields match.
-pub fn checkPath(comptime E: type) void {
-    const parts = comptime parsePathTemplate(E.path);
-    inline for (parts) |p| if (p == .param) {
-        if (E.Path == void or !@hasField(E.Path, p.param))
-            @compileError(@typeName(E) ++ ": path placeholder {" ++ p.param ++
-                "} has no field in Path");
-    };
-
-    if (E.Path != void) inline for (@typeInfo(E.Path).@"struct".field_names) |f| {
-        if (comptime !templateHas(parts, f))
-            @compileError(@typeName(E) ++ ": Path." ++ f ++ " is not used in the path template");
-
-        if (@typeInfo(@FieldType(E.Path, f)) == .optional)
-            @compileError(@typeName(E) ++ ": Path." ++ f ++ " may not be optional in the path template");
-    };
-}
-
-/// Returns true if `field_name` appears as a `{param}` in the template parts.
-fn templateHas(comptime parts: []const Part, comptime field_name: []const u8) bool {
-    for (parts) |p| switch (p) {
-        .param => |name| if (std.mem.eql(u8, name, field_name)) return true,
-        .literal => {},
-    };
-
-    return false;
-}
-
-/// Fails if an endpoint definition is incomplete. We will later use these to build
-/// requests and parse responses.
-fn assertEndpoint(comptime E: type) void {
-    switch (@typeInfo(E)) {
-        .@"struct" => {},
-        else => return,
-    }
-
-    inline for (.{ "method", "base", "path", "auth", "added_in", "rate_limited", "Path", "Query", "Body", "Response" }) |d|
-        if (!@hasDecl(E, d)) @compileError("Endpoint " ++ @typeName(E) ++ " is missing `" ++ d ++ "`");
-
-    checkPath(E);
-}
-
-/// Checks all endpoints defined in the namespace struct `N`.
-///
-/// # Notes
-///
-/// Any shared schema in a file should be moved under `definitions.zig`
-/// and imported.
-///
-/// This should be in a test block next to `refAllDecls`.
-pub fn checkEndpoints(comptime N: type) void {
-    inline for (@typeInfo(N).@"struct".decl_names) |endpoint| {
-        if (@TypeOf(@field(N, endpoint)) == type)
-            assertEndpoint(@field(N, endpoint));
-    }
-}
-
-/// Helper function. Returns true if the endpoint is supported.
-pub fn supports(comptime Endpoint: type, server: []const SpecVersion) bool {
-    const needed = Endpoint.added_in orelse return true;
-    for (server) |v| if (v.order(needed) != .lt) return true;
-    return false;
-}
 
 /// Helper to stringify a struct or tagged union.
 ///
@@ -526,36 +432,6 @@ fn checkFlattenable(comptime T: type, comptime where: []const u8) void {
 
 test {
     std.testing.refAllDecls(@This());
-}
-
-test "supports works with endpoint with no added_in" {
-    const versions = &.{
-        SpecVersion.from(1, 19),
-        SpecVersion.from(1, 18),
-    };
-
-    const Endpoint = struct {
-        pub const added_in: ?SpecVersion = null;
-    };
-
-    try std.testing.expect(
-        supports(Endpoint, versions),
-    );
-}
-
-test "supports works with endpoint with lower/eq added_in" {
-    const versions = &.{
-        SpecVersion.from(1, 19),
-        SpecVersion.from(1, 18),
-    };
-
-    const Endpoint = struct {
-        pub const added_in: ?SpecVersion = .from(1, 18);
-    };
-
-    try std.testing.expect(
-        supports(Endpoint, versions),
-    );
 }
 
 test "writeTypedFieldsJson" {
