@@ -15,14 +15,15 @@ const definitions = @import("definitions.zig");
 ///
 /// https://spec.matrix.org/v1.19/client-server-api/#getwell-knownmatrixclient
 ///
-/// Errors: `404` no server discovery information available.
+/// # Errors
+///
+/// * `404` should be ignored, and the server name is the homeserver.
 pub const WellKnownClient = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/client";
     pub const auth: common.Auth = .none;
     pub const added_in: ?common.SpecVersion = null;
-    pub const deprecated = false;
     pub const rate_limited = false;
 
     pub const Path = void;
@@ -35,14 +36,15 @@ pub const WellKnownClient = struct {
 ///
 /// https://spec.matrix.org/v1.19/client-server-api/#getwell-knownmatrixsupport
 ///
-/// Errors: `404` no server support information available.
+/// # Errors
+///
+/// * `404` no server support information available.
 pub const WellKnownSupport = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/support";
     pub const auth: common.Auth = .none;
     pub const added_in: ?common.SpecVersion = .from(1, 10);
-    pub const deprecated = false;
     pub const rate_limited = false;
 
     pub const Path = void;
@@ -82,14 +84,15 @@ pub const WellKnownSupport = struct {
 ///
 /// https://spec.matrix.org/v1.19/client-server-api/#getwell-knownmatrixpolicy_server
 ///
-/// Errors: `404` no policy server information available.
+/// # Errors
+///
+/// * `404` no policy server information available.
 pub const WellKnownPolicyServer = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/policy_server";
     pub const auth: common.Auth = .none;
     pub const added_in: ?common.SpecVersion = .from(1, 18);
-    pub const deprecated = false;
     pub const rate_limited = false;
 
     pub const Path = void;
@@ -122,7 +125,6 @@ pub const Versions = struct {
     pub const path = "/_matrix/client/versions";
     pub const auth: common.Auth = .optional;
     pub const added_in: ?common.SpecVersion = null;
-    pub const deprecated = false;
     pub const rate_limited = false;
 
     pub const Path = void;
