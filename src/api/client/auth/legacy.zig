@@ -3,6 +3,7 @@
 const std = @import("std");
 
 const common = @import("../common.zig");
+const definitions = @import("../definitions.zig");
 
 /// Gets the homeserver’s supported login types to authenticate users.
 /// Clients should pick one of these and supply it as the type when
@@ -84,7 +85,14 @@ pub const Login = struct {
         }
     };
 
-    pub const Response = struct {};
+    pub const Response = struct {
+        user_id: []const u8,
+        access_token: []const u8,
+        device_id: []const u8,
+        refresh_token: ?[]const u8,
+        expires_in_ms: ?u64,
+        well_known: ?definitions.DiscoveryInformation,
+    };
 
     pub const Credentials = union(enum) {
         pub const type_prefix = "m.login.";
