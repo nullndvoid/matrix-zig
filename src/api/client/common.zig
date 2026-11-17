@@ -282,52 +282,44 @@ pub fn supports(comptime Endpoint: type, server: []const SpecVersion) bool {
     return false;
 }
 
-/// Stringifies structs and tagged unions. Add a
-/// `pub const flatten = .{ .field_name = "m.prefix" };`
-/// field to structs to flatten tagged unions matrix style.
+/// Helper to stringify a struct or tagged union.
 ///
-/// Add a `type_prefix` decl to tagged unions when you need.
+/// Tagged unions will have their tag/type discriminated on the outer object, like:
 ///
-/// The compiler should guide you to the right path, but unit
-/// tests can enforce this.
+/// ```json
+/// {
+///     "type": "m.auth.password",
+///     "password": {              // <-- The current tag is password
+///         // inner fields
+///     },
+///     "id": 123,
+/// }
+/// ```
+/// # Notes
 ///
-/// _This should be used instead of manual `jsonStringify`_.
+/// To change the outer field from `"type"`, define `pub const type_key`.
 ///
-/// _Additionally, I will make it a requirement that all `Body` types
-/// declare a `jsonStringify` if not present._
+/// To change the type keys prefix from `"m.auth"`, define `pub const type_prefix`.
 pub fn stringify(self: anytype, jws: anytype) !void {
     const T = @TypeOf(self);
 
     try jws.beginObject();
 
     switch (@typeInfo(T)) {
-        .@"union" => {
-            if (comptime !@hasDecl(T, "type_prefix"))
-                @compileError(@typeName(T) ++ " is a union; declare `pub const type_prefix = \"...\";`");
-            try writeTypedFieldsJson(jws, T.type_prefix, self);
-        },
-        .@"struct" => {
-            const flatten = comptime if (@hasDecl(T, "flatten")) T.flatten else .{};
-            const names = @typeInfo(@TypeOf(flatten)).@"struct".field_names;
+        .@"union" => try writeTypedFieldsJson(jws, self),
+        .@"struct" => if (comptime @hasDecl(T, "flatten")) {
+            const name = comptime flattenName(T);
 
-            comptime for (names) |n| {
-                if (!@hasField(T, n))
-                    @compileError(@typeName(T) ++ " has no field '" ++ n ++ "' but it is named in `flatten`");
-                if (@typeInfo(@TypeOf(@field(flatten, n))) != .pointer)
-                    @compileError(@typeName(T) ++ ".flatten." ++ n ++ " must be a type prefix string");
-            };
+            try writeFields(jws, self, &.{name});
 
-            try writeFields(jws, self, names);
-
-            inline for (names) |n| {
-                const v = @field(self, n);
-                const prefix = @field(flatten, n);
-                if (@typeInfo(@TypeOf(v)) == .optional) {
-                    if (v) |inner| try writeTypedFieldsJson(jws, prefix, inner);
-                } else {
-                    try writeTypedFieldsJson(jws, prefix, v);
-                }
+            const v = @field(self, name);
+            if (@typeInfo(@TypeOf(v)) == .optional) {
+                if (v) |inner| try writeTypedFieldsJson(jws, inner);
+            } else {
+                try writeTypedFieldsJson(jws, v);
             }
+        } else {
+            try writeFields(jws, self, &.{});
         },
         else => @compileError("stringify only supports structs and tagged unions, got " ++ @typeName(T)),
     }
@@ -335,20 +327,45 @@ pub fn stringify(self: anytype, jws: anytype) !void {
     try jws.endObject();
 }
 
+/// Validates `T.flatten` and returns it as a field name.
+fn flattenName(comptime T: type) []const u8 {
+    if (@typeInfo(@TypeOf(T.flatten)) != .pointer)
+        @compileError(@typeName(T) ++ ".flatten must be a single field name, e.g. " ++
+            "`pub const flatten = \"auth\";`. Type prefixes belong on the union as `type_prefix`.");
+
+    const name: []const u8 = T.flatten;
+
+    if (!@hasField(T, name))
+        @compileError(@typeName(T) ++ " has no field '" ++ name ++ "' but it is named in `flatten`");
+
+    const FT = @FieldType(T, name);
+    const U = switch (@typeInfo(FT)) {
+        .optional => |o| o.child,
+        else => FT,
+    };
+    if (@typeInfo(U) != .@"union" or @typeInfo(U).@"union".tag_type == null)
+        @compileError(@typeName(T) ++ "." ++ name ++ " is named in `flatten` but is not a tagged union");
+
+    return name;
+}
+
 /// Writes `"type": "<prefix><tag>"`, then flattens the active payload into an
 /// object the caller has already opened. Use this in `jsonStringify` where you
 /// have a field that is a tagged union.
-fn writeTypedFieldsJson(jws: anytype, comptime prefix: []const u8, val: anytype) !void {
+///
+/// See `tagInfo` for the fields you should set.
+fn writeTypedFieldsJson(jws: anytype, val: anytype) !void {
     switch (val) {
         inline else => |payload, tag| {
             const P = @TypeOf(payload);
+            const key, const prefix = comptime tagInfo(@TypeOf(val));
 
-            try jws.objectField("type");
+            try jws.objectField(key);
             try jws.write(prefix ++ @tagName(tag));
 
             switch (@typeInfo(P)) {
                 .@"struct" => {
-                    if (comptime @hasField(P, "type"))
+                    if (comptime @hasField(P, key))
                         @compileError("variant '" ++ @tagName(tag) ++ "': " ++ @typeName(P) ++
                             " has a `type` field, which would duplicate the discriminator");
                     try writeFields(jws, payload, &.{});
@@ -364,6 +381,13 @@ fn writeTypedFieldsJson(jws: anytype, comptime prefix: []const u8, val: anytype)
             }
         },
     }
+}
+
+fn tagInfo(comptime U: type) struct { []const u8, []const u8 } {
+    return .{
+        if (@hasDecl(U, "type_key")) U.type_key else "type",
+        if (@hasDecl(U, "type_prefix")) U.type_prefix else "",
+    };
 }
 
 /// Writes every field of a struct into an already-open object, skipping null optionals.
@@ -451,6 +475,8 @@ test "writeTypedFieldsJson" {
     const gpa = std.testing.allocator;
 
     const U = union(enum) {
+        pub const type_prefix = "m.test.";
+
         dummy: void,
         bare: []const u8,
         fields: struct { a: []const u8, b: ?[]const u8 = null },
@@ -459,7 +485,7 @@ test "writeTypedFieldsJson" {
         u: U,
         pub fn jsonStringify(self: @This(), jws: anytype) !void {
             try jws.beginObject();
-            try writeTypedFieldsJson(jws, "m.test.", self.u);
+            try writeTypedFieldsJson(jws, self.u);
             try jws.endObject();
         }
     };
@@ -496,9 +522,7 @@ test "stringify some type" {
             token: []const u8,
         },
 
-        pub const flatten = .{
-            .auth = "",
-        };
+        pub const flatten = "auth";
 
         pub fn jsonStringify(self: @This(), jws: anytype) !void {
             try stringify(self, jws);

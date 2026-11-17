@@ -68,9 +68,7 @@ pub const Login = struct {
     pub const Path = void;
     pub const Query = void;
     pub const Body = struct {
-        pub const flatten = .{
-            .auth = "m.login.",
-        };
+        pub const flatten = "auth";
 
         auth: Auth,
         device_id: ?[]const u8 = null,
@@ -85,12 +83,17 @@ pub const Login = struct {
     pub const Response = struct {};
 
     pub const Auth = union(enum) {
+        pub const type_prefix = "m.login.";
+
         password: struct {
             identifier: UserIdentifier,
             password: []const u8,
         },
         token: struct {
             token: []const u8,
+        },
+        application_service: struct {
+            identifier: UserIdentifier,
         },
     };
 
