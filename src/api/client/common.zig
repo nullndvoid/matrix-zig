@@ -275,6 +275,58 @@ pub const SpecVersion = struct {
     }
 };
 
+const Part = union(enum) { literal: []const u8, param: []const u8 };
+
+/// Given a path template with variables in curly braces,
+/// parses into a list of literals/params.
+fn parsePathTemplate(comptime template: []const u8) []const Part {
+    comptime {
+        var parts: []const Part = &.{};
+        var i: usize = 0;
+
+        while (i < template.len) {
+            if (template[i] == '{') {
+                const end = std.mem.findScalarPos(u8, template, i, '}') orelse
+                    @compileError("Unclosed '{' in path " ++ template);
+
+                parts = parts ++ .{Part{ .param = template[i + 1 .. end] }};
+            } else {
+                const end = std.mem.findScalarPos(u8, template, i, '{') orelse
+                    template.len;
+                parts = parts ++ .{Part{ .literal = template[i..end] }};
+                i = end;
+            }
+        }
+
+        return parts;
+    }
+}
+
+/// Validates the path template and Path struct fields match.
+fn checkPath(comptime E: type) void {
+    const parts = comptime parsePathTemplate(E.path);
+    inline for (parts) |p| if (p == .param) {
+        if (E.Path == void or !@hasField(E.Path, p.param))
+            @compileError(@typeName(E) ++ ": path placeholder {" ++ p.param ++
+                "} has no field in Path");
+    };
+
+    if (E.Path != void) for (@typeInfo(E.Path).@"struct".field_names) |f| {
+        if (!templateHas(parts, f))
+            @compileError(@typeName(E) ++ ": Path." ++ f ++ " is not used in the path template");
+    };
+}
+
+fn templateHas(parts: []const Part, comptime field_name: [:0]const u8) bool {
+    inline for (parts) |p| {
+        if (p == .param) if (!std.mem.eql(u8, p.param, field_name)) continue;
+
+        return true;
+    }
+
+    return false;
+}
+
 /// Fails if an endpoint definition is incomplete. We will later use these to build
 /// requests and parse responses.
 fn assertEndpoint(comptime E: type) void {
@@ -285,6 +337,8 @@ fn assertEndpoint(comptime E: type) void {
 
     inline for (.{ "method", "base", "path", "auth", "added_in", "rate_limited", "Path", "Query", "Body", "Response" }) |d|
         if (!@hasDecl(E, d)) @compileError("Endpoint " ++ @typeName(E) ++ " is missing `" ++ d ++ "`");
+
+    checkPath(E);
 }
 
 /// Checks all endpoints defined in the namespace struct `N`.
