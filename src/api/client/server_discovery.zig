@@ -15,9 +15,9 @@ const definitions = @import("definitions.zig");
 ///
 /// https://spec.matrix.org/v1.19/client-server-api/#getwell-knownmatrixclient
 ///
-/// # Errors
+/// # Notes
 ///
-/// * `404` should be ignored, and the server name is the homeserver.
+/// - `404` should be ignored, and the server name is the homeserver.
 pub const WellKnownClient = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
@@ -38,7 +38,7 @@ pub const WellKnownClient = struct {
 ///
 /// # Errors
 ///
-/// * `404` no server support information available.
+/// - `404` no server support information available.
 pub const WellKnownSupport = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
@@ -86,7 +86,7 @@ pub const WellKnownSupport = struct {
 ///
 /// # Errors
 ///
-/// * `404` no policy server information available.
+/// - `404` no policy server information available.
 pub const WellKnownPolicyServer = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;

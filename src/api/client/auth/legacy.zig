@@ -1,7 +1,8 @@
+//! Legacy Auth.
+
 const std = @import("std");
 
 const common = @import("../common.zig");
-const definitions = @import("../definitions.zig");
 
 /// Gets the homeserver’s supported login types to authenticate users.
 /// Clients should pick one of these and supply it as the type when
@@ -39,6 +40,9 @@ pub const LoginFlows = struct {
         /// **Required:** The login type. This is supplied as the type
         /// when logging in.
         type: []const u8,
+
+        pub const type_password = "m.login.password";
+        pub const type_token = "m.login.token";
     };
 };
 
@@ -68,9 +72,9 @@ pub const Login = struct {
     pub const Path = void;
     pub const Query = void;
     pub const Body = struct {
-        pub const flatten = "auth";
+        pub const flatten = "credentials";
 
-        auth: Auth,
+        credentials: Credentials,
         device_id: ?[]const u8 = null,
         initial_device_display_name: ?[]const u8 = null,
         refresh_token: ?bool = null,
@@ -82,7 +86,7 @@ pub const Login = struct {
 
     pub const Response = struct {};
 
-    pub const Auth = union(enum) {
+    pub const Credentials = union(enum) {
         pub const type_prefix = "m.login.";
 
         password: struct {
@@ -133,7 +137,7 @@ test "UserIdentifier json" {
         },
     };
     inline for (cases) |c| {
-        const out = try std.json.Stringify.valueAlloc(gpa, c[0], .{});
+        const out = try std.json.Stringify.valueAlloc(gpa, c[0], common.serialise_options);
         defer gpa.free(out);
         try std.testing.expectEqualStrings(c[1], out);
     }
@@ -142,7 +146,7 @@ test "UserIdentifier json" {
 test "Login.Body json" {
     const gpa = std.testing.allocator;
     const body = Login.Body{
-        .auth = .{
+        .credentials = .{
             .password = .{
                 .identifier = .{ .user = "jacob" },
                 .password = "password123",
@@ -150,7 +154,7 @@ test "Login.Body json" {
         },
         .device_id = "ABC",
     };
-    const out = try std.json.Stringify.valueAlloc(gpa, body, .{});
+    const out = try std.json.Stringify.valueAlloc(gpa, body, common.serialise_options);
     defer gpa.free(out);
     try std.testing.expectEqualStrings(
         \\{"device_id":"ABC","type":"m.login.password","identifier":{"type":"m.id.user","user":"jacob"},"password":"password123"}
@@ -159,4 +163,6 @@ test "Login.Body json" {
 
 test {
     common.checkEndpoints(@This());
+
+    std.testing.refAllDecls(@This());
 }

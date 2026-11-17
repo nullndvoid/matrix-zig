@@ -289,10 +289,16 @@ fn assertEndpoint(comptime E: type) void {
 
 /// Checks all endpoints defined in the namespace struct `N`.
 ///
+/// # Notes
+///
+/// Any shared schema in a file should be moved under `definitions.zig`
+/// and imported.
+///
 /// This should be in a test block next to `refAllDecls`.
 pub fn checkEndpoints(comptime N: type) void {
     inline for (@typeInfo(N).@"struct".decl_names) |endpoint| {
-        assertEndpoint(@field(N, endpoint));
+        if (@TypeOf(@field(N, endpoint)) == type)
+            assertEndpoint(@field(N, endpoint));
     }
 }
 
