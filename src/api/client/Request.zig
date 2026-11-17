@@ -32,16 +32,19 @@ pub const QueryParam = struct {
     /// For simplicity, URL-encoding is not done just yet.
     fn valToString(comptime Q: type, val: anytype, arena: Allocator) ![]const u8 {
         return switch (@typeInfo(@TypeOf(val))) {
-            // For now, assume string and return inscrutable error if not true.
             .pointer => |ptr| if (ptr.size == .slice and ptr.child == u8)
                 val
             else
                 @compileError(@typeName(Q) ++ ": query strings must be []const u8"),
-            .@"enum" => @tagName(val),
+            .@"enum" => if (@hasDecl(@TypeOf(val), "format"))
+                try arena.print("{f}", .{val})
+            else
+                @tagName(val),
             .bool => {
                 if (val) "true" else "false";
             },
             .int => try arena.print("{d}", .{val}),
+            .@"struct", .@"union" => try arena.print("{f}", .{val}),
             else => @compileError("Unsupported value type for " ++ @typeName(Q)),
         };
     }
@@ -176,8 +179,19 @@ test "Request.init handles Query correctly" {
                 name: []const u8,
                 age: u8,
                 favourite_colour: FaveColour,
+                foo: Foo = .{},
 
                 pub const FaveColour = enum { blue, red, other };
+                pub const Foo = struct {
+                    wtf: u8 = 0,
+
+                    pub fn format(
+                        self: @This(),
+                        writer: *std.Io.Writer,
+                    ) std.Io.Writer.Error!void {
+                        try writer.print("{d}", .{self.wtf});
+                    }
+                };
             };
             pub const Body = void;
             pub const Response = void;
