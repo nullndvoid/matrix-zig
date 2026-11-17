@@ -91,6 +91,8 @@ pub fn jsonStringify(self: @This(), jws: anytype) !void {
 /// Parsed server name.
 pub const ServerName = struct {
     /// This is just a slice. Be wary with ownership.
+    ///
+    /// IPv6 hosts include the brackets, so can be used directly in a URL.
     host: []const u8,
     port: ?u16,
 
@@ -107,17 +109,17 @@ pub const ServerName = struct {
         if (s[0] == '[') {
             const end_bracket_idx = std.mem.findScalar(u8, s, ']') orelse
                 return error.InvalidServerName;
-            const host = s[1..end_bracket_idx];
 
-            if (host.len < 2 or host.len > 45) return error.InvalidServerName;
+            const inner = s[1..end_bracket_idx];
+            if (inner.len < 2 or inner.len > 45) return error.InvalidServerName;
 
             // Inner characters should be hex / ':' / '.'.
-            for (host) |c| {
-                switch (c) {
-                    ':', '.', '0'...'9', 'a'...'f', 'A'...'F' => {},
-                    else => return error.InvalidServerName,
-                }
-            }
+            for (inner) |c| switch (c) {
+                ':', '.', '0'...'9', 'a'...'f', 'A'...'F' => {},
+                else => return error.InvalidServerName,
+            };
+
+            const host = s[0 .. end_bracket_idx + 1];
 
             // After the host, we expect either nothing, or a ':' followed
             // by a port.
@@ -274,4 +276,12 @@ test "json" {
 
     try std.testing.expectEqualStrings("@bob:matrix.org", parsed.value.data);
     try std.testing.expectEqualStrings("matrix.org", parsed.value.server_name.host);
+}
+
+test "ipv6 keeps brackets" {
+    const server_name = "[::1]:8448";
+
+    const got = try ServerName.init(server_name);
+
+    try std.testing.expectEqualStrings("[::1]", got.host);
 }
