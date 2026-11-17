@@ -275,6 +275,27 @@ pub const SpecVersion = struct {
     }
 };
 
+/// Fails if an endpoint definition is incomplete. We will later use these to build
+/// requests and parse responses.
+fn assertEndpoint(comptime E: type) void {
+    switch (@typeInfo(E)) {
+        .@"struct" => {},
+        else => return,
+    }
+
+    inline for (.{ "method", "base", "path", "auth", "added_in", "rate_limited", "Path", "Query", "Body", "Response" }) |d|
+        if (!@hasDecl(E, d)) @compileError("Endpoint " ++ @typeName(E) ++ " is missing `" ++ d ++ "`");
+}
+
+/// Checks all endpoints defined in the namespace struct `N`.
+///
+/// This should be in a test block next to `refAllDecls`.
+pub fn checkEndpoints(comptime N: type) void {
+    inline for (@typeInfo(N).@"struct".decl_names) |endpoint| {
+        assertEndpoint(@field(N, endpoint));
+    }
+}
+
 /// Helper function. Returns true if the endpoint is supported.
 pub fn supports(comptime Endpoint: type, server: []const SpecVersion) bool {
     const needed = Endpoint.added_in orelse return true;

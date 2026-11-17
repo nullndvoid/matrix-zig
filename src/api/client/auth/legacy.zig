@@ -156,3 +156,7 @@ test "Login.Body json" {
         \\{"device_id":"ABC","type":"m.login.password","identifier":{"type":"m.id.user","user":"jacob"},"password":"password123"}
     , out);
 }
+
+test {
+    common.checkEndpoints(@This());
+}

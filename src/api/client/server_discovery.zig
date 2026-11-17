@@ -16,7 +16,7 @@ const definitions = @import("definitions.zig");
 /// https://spec.matrix.org/v1.19/client-server-api/#getwell-knownmatrixclient
 ///
 /// Errors: `404` no server discovery information available.
-pub const GetWellKnownClient = struct {
+pub const WellKnownClient = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/client";
@@ -36,7 +36,7 @@ pub const GetWellKnownClient = struct {
 /// https://spec.matrix.org/v1.19/client-server-api/#getwell-knownmatrixsupport
 ///
 /// Errors: `404` no server support information available.
-pub const GetWellKnownSupport = struct {
+pub const WellKnownSupport = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/support";
@@ -83,7 +83,7 @@ pub const GetWellKnownSupport = struct {
 /// https://spec.matrix.org/v1.19/client-server-api/#getwell-knownmatrixpolicy_server
 ///
 /// Errors: `404` no policy server information available.
-pub const GetWellKnownPolicyServer = struct {
+pub const WellKnownPolicyServer = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
     pub const path = "/.well-known/matrix/policy_server";
@@ -116,7 +116,7 @@ pub const GetWellKnownPolicyServer = struct {
 ///
 /// Changed in v1.10: this endpoint can behave differently when authentication
 /// is provided.
-pub const GetVersions = struct {
+pub const Versions = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .homeserver;
     pub const path = "/_matrix/client/versions";
@@ -146,7 +146,7 @@ test "parse well-known client response" {
         \\ "com.example.custom":1}
     ;
     const parsed = try std.json.parseFromSlice(
-        GetWellKnownClient.Response,
+        WellKnownClient.Response,
         std.testing.allocator,
         json,
         common.parse_options,
@@ -168,7 +168,7 @@ test "parse versions response" {
         \\{"versions":["v1.18","v1.19"],"unstable_features":{"org.example.feature":true}}
     ;
     const parsed = try std.json.parseFromSlice(
-        GetVersions.Response,
+        Versions.Response,
         std.testing.allocator,
         json,
         common.parse_options,
@@ -184,5 +184,7 @@ test "parse versions response" {
 }
 
 test {
+    common.checkEndpoints(@This());
+
     std.testing.refAllDecls(@This());
 }
