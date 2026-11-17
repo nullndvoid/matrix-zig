@@ -194,6 +194,8 @@ fn parsePathTemplate(comptime template: []const u8) []const Part {
             } else {
                 const end = std.mem.findScalarPos(u8, template, i, '{') orelse
                     template.len;
+                if (std.mem.findScalarPos(u8, template[i..end], 0, '{')) |_|
+                    @compileError("Unexpected '{' in path literal " ++ template);
                 parts = parts ++ .{Part{ .literal = template[i..end] }};
                 i = end;
             }
