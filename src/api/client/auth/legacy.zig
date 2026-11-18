@@ -90,9 +90,9 @@ pub const Login = struct {
         user_id: []const u8,
         access_token: []const u8,
         device_id: []const u8,
-        refresh_token: ?[]const u8,
-        expires_in_ms: ?u64,
-        well_known: ?definitions.DiscoveryInformation,
+        refresh_token: ?[]const u8 = null,
+        expires_in_ms: ?u64 = null,
+        well_known: ?definitions.DiscoveryInformation = null,
     };
 
     pub const Credentials = union(enum) {

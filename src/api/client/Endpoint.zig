@@ -183,6 +183,7 @@ fn validate(comptime E: type) void {
     checkDecls(E);
     checkPath(E);
     checkQuery(E);
+    checkResponse(E);
 }
 
 fn checkDecls(comptime E: type) void {
@@ -228,6 +229,38 @@ fn checkQuery(comptime E: type) void {
         .void, .@"struct" => {},
         else => @compileError("Expected either a struct or void for " ++
             @typeName(E) ++ ".Query."),
+    }
+}
+
+fn checkResponse(comptime E: type) void {
+    checkParsable(E.Response, @typeName(E) ++ ".Response");
+}
+
+/// std.json reports a missing field as `error.MissingField` unless it has a
+/// default value, even if the field is optional.
+fn checkParsable(comptime T: type, comptime where: []const u8) void {
+    switch (@typeInfo(T)) {
+        .optional => |o| checkParsable(o.child, where),
+        .pointer => |p| if (p.size == .slice) checkParsable(p.child, where),
+        .array => |a| checkParsable(a.child, where),
+        .@"struct" => |s| {
+            if (@hasDecl(T, "jsonParse")) return;
+
+            inline for (s.field_names, s.field_types, s.field_attrs) |name, FT, attrs| {
+                if (@typeInfo(FT) == .optional and attrs.default_value_ptr == null)
+                    @compileError(where ++ "." ++ name ++
+                        " is optional but has no default. Add `= null`.");
+
+                checkParsable(FT, where ++ "." ++ name);
+            }
+        },
+        .@"union" => |u| {
+            if (@hasDecl(T, "jsonParse")) return;
+
+            inline for (u.field_names, u.field_types) |name, FT|
+                checkParsable(FT, where ++ "." ++ name);
+        },
+        else => {},
     }
 }
 
