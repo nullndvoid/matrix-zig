@@ -4,6 +4,7 @@ const std = @import("std");
 
 const common = @import("../common.zig");
 const endpoint = @import("../Endpoint.zig");
+const Endpoint = endpoint.Endpoint;
 const definitions = @import("../definitions.zig");
 
 /// Gets the homeserver’s supported login types to authenticate users.
@@ -128,6 +129,81 @@ pub const Login = struct {
         }
     };
 };
+
+pub const Logout = struct {
+    pub const method: std.http.Method = .POST;
+    pub const base: common.BaseKind = .homeserver;
+    pub const path = "/_matrix/client/v3/logout";
+    pub const auth: common.Auth = .access_token;
+    pub const added_in: ?common.SpecVersion = null;
+    pub const rate_limited: bool = false;
+
+    pub const Path = void;
+    pub const Query = void;
+    pub const Body = void;
+    pub const Response = struct {};
+};
+
+pub const LogoutAll = struct {
+    pub const method: std.http.Method = .POST;
+    pub const base: common.BaseKind = .homeserver;
+    pub const path = "/_matrix/client/v3/logout/all";
+    pub const auth: common.Auth = .access_token;
+    pub const added_in: ?common.SpecVersion = null;
+    pub const rate_limited: bool = false;
+
+    pub const Path = void;
+    pub const Query = void;
+    pub const Body = void;
+    pub const Response = struct {};
+};
+
+pub const Refresh = struct {
+    pub const method: std.http.Method = .POST;
+    pub const base: common.BaseKind = .homeserver;
+    pub const path = "/_matrix/client/v3/refresh";
+    // Refresh token should go in the body instead.
+    pub const auth: common.Auth = .none;
+    pub const added_in: ?common.SpecVersion = .from(1, 3);
+    pub const rate_limited: bool = true;
+
+    pub const Path = void;
+    pub const Query = void;
+    pub const Body = struct {
+        refresh_token: []const u8,
+    };
+    pub const Response = struct {
+        access_token: []const u8,
+        /// If not given, the old refresh token can be re-used.
+        refresh_token: ?[]const u8 = null,
+        /// The lifetime of the new access token, in ms.
+        expires_in_ms: ?u64 = null,
+    };
+};
+
+test "Logout" {
+    const E = Endpoint(Logout);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    _ = try E.toRequest(
+        arena.allocator(),
+        .{ .n = 0 },
+        {},
+        {},
+        {},
+        {},
+    );
+
+    // Pretend we sent off a request. We are allowing empty response bodies
+    // where "{}" is expected.
+    const outcome = try E.parse(arena.allocator(), 200, "");
+
+    // Logging out should simply give .ok with a "{}" response.
+    try std.testing.expectEqual(E.Outcome{
+        .ok = .{},
+    }, outcome);
+}
 
 test "UserIdentifier json" {
     const gpa = std.testing.allocator;
