@@ -7,8 +7,12 @@
 //! by the homeserver itself.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+
 const common = @import("common.zig");
 const endpoint = @import("Endpoint.zig");
+const Endpoint = endpoint.Endpoint;
+
 const definitions = @import("definitions.zig");
 
 /// Gets discovery information about the domain. The file may include
@@ -18,7 +22,7 @@ const definitions = @import("definitions.zig");
 ///
 /// # Notes
 ///
-/// - `404` should be ignored, and the server name is the homeserver.
+/// - `404` should be ignored, setting the server name to the homeserver.
 pub const WellKnownClient = struct {
     pub const method: std.http.Method = .GET;
     pub const base: common.BaseKind = .server_name;
@@ -30,7 +34,31 @@ pub const WellKnownClient = struct {
     pub const Path = void;
     pub const Query = void;
     pub const Body = void;
-    pub const Response = definitions.DiscoveryInformation;
+    pub const Response = ?definitions.DiscoveryInformation;
+
+    const E = Endpoint(@This());
+
+    pub fn parse(arena: Allocator, status: u16, body: []const u8) Allocator.Error!E.Outcome {
+        return switch (status) {
+            200 => blk: {
+                const resp = try endpoint.parseJson(
+                    // Override the optional response type since the request
+                    // succeeded.
+                    definitions.DiscoveryInformation,
+                    arena,
+                    body,
+                    status,
+                );
+
+                break :blk switch (resp) {
+                    .ok => |info| .{ .ok = info },
+                    .err => |fail| .{ .err = fail },
+                };
+            },
+            404 => .{ .ok = null },
+            else => E.defaultParse(arena, status, body),
+        };
+    }
 };
 
 /// Gets server admin contact and support page of the domain.
@@ -158,12 +186,62 @@ test "parse well-known client response" {
 
     try std.testing.expectEqualStrings(
         "https://matrix.example.com",
-        parsed.value.@"m.homeserver".base_url,
+        parsed.value.?.@"m.homeserver".base_url,
     );
     try std.testing.expectEqualStrings(
         "https://identity.example.com",
-        parsed.value.@"m.identity_server".?.base_url,
+        parsed.value.?.@"m.identity_server".?.base_url,
     );
+}
+
+test "well-known client - Endpoint parse" {
+    const E = Endpoint(WellKnownClient);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Status, Body, Expected.
+    const cases = .{
+        .{
+            200,
+            \\{"m.homeserver":{"base_url":"https://matrix.org"}}
+            ,
+            E.Outcome{ .ok = .{ .@"m.homeserver" = .{ .base_url = "https://matrix.org" } } },
+        },
+        .{ 404, "", E.Outcome{ .ok = null } },
+        .{
+            200, "<html><p>This ain't right...</p></html>",
+            E.Outcome{
+                .err = .{
+                    .status = 200,
+                    .what = .{ .malformed = "<html><p>This ain't right...</p></html>" },
+                },
+            },
+        },
+        .{
+            200, "",
+            E.Outcome{ .err = .{
+                .status = 200,
+                .what = .{ .malformed = "" },
+            } },
+        },
+        .{
+            500, "",
+            E.Outcome{
+                .err = .{
+                    .status = 500,
+                    .what = .{ .other = "" },
+                },
+            },
+        },
+    };
+
+    inline for (cases) |c| {
+        const status, const body, const expected = c;
+
+        const got = try E.parse(arena.allocator(), status, body);
+
+        try std.testing.expectEqualDeep(expected, got);
+    }
 }
 
 test "parse versions response" {

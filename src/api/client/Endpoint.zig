@@ -34,7 +34,7 @@ pub fn Endpoint(comptime E: type) type {
         }
 
         /// Builds a request for the given `Endpoint`.
-        pub fn request(
+        pub fn toRequest(
             arena: Allocator,
             id: Request.RequestId,
             path: E.Path,
@@ -56,23 +56,15 @@ pub fn Endpoint(comptime E: type) type {
             };
         }
 
-        /// Parses a response and body into an `Outcome`.
+        /// Use this when overriding `parse` to delegate to default behaviour,
+        /// for example after handling status code outside of `[200, 300)` range.
         ///
-        /// # Notes
-        ///
-        /// Endpoints may override this using the `parse` method. This is useful
-        /// when error codes such as `404` are not to be treated as errors.
-        ///
-        /// The returned `Outcome` lives as long as `body` and `arena` do.
-        pub fn parse(arena: Allocator, status: u16, body: []const u8) !Outcome {
-            const json = if (body.len == 0) "{}" else body;
-
-            if (comptime @hasDecl(E, "parse")) return E.parse(arena, status, json);
-
+        /// Calling this normally is a code smell.
+        pub fn defaultParse(arena: Allocator, status: u16, body: []const u8) Allocator.Error!Outcome {
             if (status < 200 or status >= 300) {
                 return .{ .err = .{
                     .status = status,
-                    .what = if (try parseError(arena, json)) |e|
+                    .what = if (try parseError(arena, body)) |e|
                         .{ .matrix = e }
                     else
                         .{ .other = body },
@@ -81,20 +73,84 @@ pub fn Endpoint(comptime E: type) type {
 
             if (E.Response == void) return .{ .ok = {} };
 
-            return .{ .ok = try std.json.parseFromSliceLeaky(
+            // Some misbehaving implementations may return nothing for a body,
+            // so to avoid a JSON parsing error, treat as an empty object.
+            const json = if (body.len == 0) "{}" else body;
+
+            const value = try parseJson(
                 E.Response,
                 arena,
                 json,
-                common.parse_options,
-            ) };
+                status,
+            );
+
+            return switch (value) {
+                .ok => |val| .{ .ok = val },
+                .err => |fail| .{ .err = fail },
+            };
+        }
+
+        /// Parses a response and body into an `Outcome`.
+        ///
+        /// # Notes
+        ///
+        /// Endpoints may override this using the `parse` method. This is useful
+        /// when error codes such as `404` are not to be treated as errors.
+        ///
+        /// The returned `Outcome` lives as long as `body` and `arena` do.
+        ///
+        /// # Overrides
+        ///
+        /// Copy this function signature into your endpoint.
+        ///
+        /// If you wish to delegate to default behaviour, use `defaultParse`.
+        ///
+        /// See also: `parseJson` (namespaced), which folds malformed
+        /// JSON errors into the Outcome.
+        pub fn parse(arena: Allocator, status: u16, body: []const u8) Allocator.Error!Outcome {
+            if (comptime @hasDecl(E, "parse")) return E.parse(arena, status, body);
+
+            return defaultParse(arena, status, body);
         }
     };
+}
+
+pub fn JsonResult(comptime T: type) type {
+    return union(enum) { ok: T, err: Failure };
+}
+
+/// Parses JSON from a slice. Folds malformed JSON errors into a `malformed` error.
+///
+/// Intended for use by endpoints when overriding `Endpoint.parse`
+///
+/// # Notes
+///
+/// `arena` should be an arena.
+pub fn parseJson(
+    comptime T: type,
+    arena: Allocator,
+    body: []const u8,
+    status: u16,
+) Allocator.Error!JsonResult(T) {
+    const value = std.json.parseFromSliceLeaky(
+        T,
+        arena,
+        body,
+        common.parse_options,
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return .{ .err = .{ .status = status, .what = .{ .malformed = body } } },
+    };
+
+    return .{ .ok = value };
 }
 
 /// Either a Matrix error, or the body of a failing `Request`.
 pub const FailureReason = union(enum) {
     matrix: common.MatrixError,
     other: []const u8,
+    /// Malformed response JSON, failed to parse.
+    malformed: []const u8,
 };
 
 pub const Failure = struct {
@@ -284,7 +340,8 @@ fn buildBody(comptime E: type, arena: Allocator, body: E.Body) !?[]const u8 {
     );
 }
 
-fn parseError(arena: Allocator, body: []const u8) !?common.MatrixError {
+/// Intended for use in `parse` implementations.
+pub fn parseError(arena: Allocator, body: []const u8) Allocator.Error!?common.MatrixError {
     return std.json.parseFromSliceLeaky(
         common.MatrixError,
         arena,
@@ -376,7 +433,7 @@ test "request builds path and query" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    const request = try Endpoint(TestEndpoint(null)).request(
+    const request = try Endpoint(TestEndpoint(null)).toRequest(
         arena.allocator(),
         .{ .n = 0 },
         .{
@@ -448,6 +505,53 @@ test "format writes method and path template" {
 
     try Endpoint(TestEndpoint(null)).format(&w);
     try std.testing.expectEqualStrings("GET /_matrix/client/v3/fakestub/{q}/{t}", w.buffered());
+}
+
+test "buildBody works as expected" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const Login = Endpoint(@import("auth.zig").legacy.Login);
+
+    const req = try Login.toRequest(
+        arena.allocator(),
+        .{ .n = 0 },
+        {},
+        {},
+        .{
+            .credentials = .{ .password = .{
+                .identifier = .{ .user = "@jacob:matrix.org" },
+                .password = "swordfish",
+            } },
+        },
+        {},
+    );
+
+    const expected =
+        \\{"type":"m.login.password","identifier":{"type":"m.id.user","user":"@jacob:matrix.org"},"password":"swordfish"}
+    ;
+    const body = req.body.?;
+
+    try std.testing.expectEqualStrings(expected, body);
+}
+
+test "Request.base should be .server_name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const WellKnownClient = Endpoint(@import("server_discovery.zig").WellKnownClient);
+
+    const req = try WellKnownClient.toRequest(
+        arena.allocator(),
+        .{ .n = 0 },
+        {},
+        {},
+        {},
+        try .init("matrix.org"),
+    );
+
+    try std.testing.expect(req.base == .server_name);
+    try std.testing.expectEqualStrings("matrix.org", req.base.server_name.host);
 }
 
 test {
