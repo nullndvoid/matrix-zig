@@ -19,7 +19,7 @@ pub const WhoAmI = struct {
     pub const Body = void;
     pub const Response = struct {
         device_id: ?[]const u8 = null,
-        is_guest: ?bool = false,
+        is_guest: bool = false,
         user_id: []const u8,
     };
 };
