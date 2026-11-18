@@ -170,9 +170,15 @@ pub const Failure = struct {
 pub fn checkAll(comptime N: type) void {
     inline for (@typeInfo(N).@"struct".decl_names) |name| {
         const decl = @field(N, name);
-        if (@TypeOf(decl) == type and @typeInfo(decl) == .@"struct")
+        if (@TypeOf(decl) == type and @typeInfo(decl) == .@"struct" and comptime isEndpoint(decl))
             _ = Endpoint(decl);
     }
+}
+
+/// Namespaces (e.g. an `@import`ed file) never declare these, while an
+/// endpoint missing only some of them still gets validated and reported.
+fn isEndpoint(comptime T: type) bool {
+    return @hasDecl(T, "method") or @hasDecl(T, "path") or @hasDecl(T, "Response");
 }
 
 /// Fails if an endpoint definition is incomplete.
